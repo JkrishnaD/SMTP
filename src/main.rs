@@ -1,4 +1,9 @@
-use tokio::{io::AsyncWriteExt, net::TcpListener};
+use std::time::Duration;
+
+use tokio::{
+    io::AsyncWriteExt,
+    net::{TcpListener, TcpStream},
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -6,10 +11,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting SMTP server on 2525");
 
     loop {
-        let (mut socket, addr) = listerner.accept().await?;
+        let (socket, addr) = listerner.accept().await?;
         println!("Accepted connection from: {}", addr);
-        println!("Socket stream: {:?}", socket);
 
-        socket.write_all(b"220 simple-smtp ready\n").await?;
+        tokio::spawn(async move {
+            let _ = handle_client(socket).await;
+        });
     }
+}
+
+async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Socket stream: {:?}", socket);
+
+    socket.write_all(b"220 simple-smtp ready\n").await?;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    Ok(())
 }
