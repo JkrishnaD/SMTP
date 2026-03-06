@@ -1,8 +1,8 @@
-use crate::parser::Command;
+use crate::{parser::Command, response::Response};
 
 pub struct Session {
     helo: Option<String>,
-    main_from: Option<String>,
+    mail_from: Option<String>,
     recipients: Vec<String>,
 }
 
@@ -10,43 +10,32 @@ impl Session {
     pub fn new() -> Session {
         Session {
             helo: None,
-            main_from: None,
+            mail_from: None,
             recipients: Vec::new(),
         }
     }
 
-    pub fn apply_command(&mut self, cmd: Command) {
+    pub fn apply_command(&mut self, cmd: Command) -> Response {
         match cmd {
             Command::Helo(domain) => {
-                self.helo = Some(domain);
+                self.helo = Some(domain.clone());
+                Response::Message(format!("250 Hello {}\r\n", domain))
             }
             Command::MailFrom(email) => {
-                self.main_from = Some(email);
+                self.mail_from = Some(email.clone());
+                Response::Message(format!("250 {} OK\r\n", email))
             }
             Command::RcptTo(email) => {
-                self.recipients.push(email);
+                if self.mail_from.is_none() {
+                    Response::Message(format!("503 Error: Need From mail\r\n"))
+                } else {
+                    self.recipients.push(email.clone());
+                    Response::Message(format!("250 {} OK\r\n", email))
+                }
             }
-            Command::Data => {
-                println!("Ready to recieve email body")
-            }
-            Command::Quit => {
-                println!("Session ending")
-            }
-            Command::Unknown => {
-                println!("Unknown SMTP command")
-            }
+            Command::Data => Response::Message(format!("354 Start mail input\r\n")),
+            Command::Quit => Response::Close(format!("221 Bye\r\n")),
+            Command::Unknown => Response::Close(format!("505 Unknown Command\r\n")),
         }
-    }
-
-    pub fn get_helo(&self) -> Option<&str> {
-        self.helo.as_deref()
-    }
-
-    pub fn get_main_from(&self) -> Option<&str> {
-        self.main_from.as_deref()
-    }
-
-    pub fn get_recipients(&self) -> &[String] {
-        &self.recipients
     }
 }
