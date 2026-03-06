@@ -3,9 +3,10 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::parser::{Command, parse_command};
+use crate::parser::parse_command;
 
 mod parser;
+mod session;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,6 +33,8 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
+    let mut session = session::Session::new();
+
     loop {
         line.clear();
 
@@ -41,25 +44,16 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
             break Ok(());
         }
         let cmd = parse_command(&line);
-        match cmd {
-            Command::Helo(domain) => {
-                println!("HELO from {}", domain)
-            }
-            Command::MailFrom(email) => {
-                println!("Sender: {}", email);
-            }
-            Command::RcptTo(email) => {
-                println!("Recipient: {}", email);
-            }
-            Command::Data => {
-                println!("Start recieving msg")
-            }
-            Command::Quit => {
-                return Ok(());
-            }
-            Command::Unknown => {
-                return Err("Unknown command".into());
-            }
-        }
+
+        session.apply_command(cmd);
+
+        let helo = session.get_helo();
+        let main_from = session.get_main_from();
+        let recipients = session.get_recipients();
+
+        println!(
+            "HELO: {:?}, MAIL_FROM: {:?}, RECIPIENTS: {:?}",
+            helo, main_from, recipients
+        );
     }
 }
