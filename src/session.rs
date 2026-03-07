@@ -4,6 +4,14 @@ pub struct Session {
     helo: Option<String>,
     mail_from: Option<String>,
     recipients: Vec<String>,
+    pub state: SessionState,
+    buffer: String,
+}
+
+#[derive(Debug)]
+pub enum SessionState {
+    Command,
+    Data,
 }
 
 impl Session {
@@ -12,6 +20,8 @@ impl Session {
             helo: None,
             mail_from: None,
             recipients: Vec::new(),
+            state: SessionState::Command,
+            buffer: String::new(),
         }
     }
 
@@ -33,9 +43,25 @@ impl Session {
                     Response::Message(format!("250 {} OK\r\n", email))
                 }
             }
-            Command::Data => Response::Message(format!("354 Start mail input\r\n")),
+            Command::Data => {
+                self.state = SessionState::Data;
+                Response::Message(format!("354 Start mail input\r\n"))
+            }
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
             Command::Unknown => Response::Close(format!("505 Unknown Command\r\n")),
+        }
+    }
+
+    pub fn handle_data(&mut self, line: &str) -> Response {
+        if line.trim() == "<CRFL>.<CRFL>" {
+            println!("EMAIL:\n{}", self.buffer);
+            self.buffer.clear();
+
+            self.state = SessionState::Command;
+            Response::Message(format!("250 OK\r\n"))
+        } else {
+            self.buffer.push_str(&line);
+            Response::None
         }
     }
 }

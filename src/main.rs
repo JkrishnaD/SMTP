@@ -3,7 +3,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::{parser::parse_command, response::Response};
+use crate::{parser::parse_command, response::Response, session::SessionState};
 
 mod parser;
 mod response;
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
     println!("Socket stream: {:?}", socket);
 
-    socket.write_all(b"220 simple-smtp ready\n").await?;
+    socket.write_all(b"220 simple-smtp ready\r\n").await?;
 
     let (reader, mut writer) = socket.into_split();
 
@@ -40,9 +40,14 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
         line.clear();
         reader.read_line(&mut line).await?;
 
-        let cmd = parse_command(&line);
+        let response = match session.state {
+            SessionState::Command => {
+                let cmd = parse_command(&line);
+                session.apply_command(cmd)
+            }
+            SessionState::Data => session.handle_data(&line),
+        };
 
-        let response = session.apply_command(cmd);
         match response {
             Response::Message(msg) => {
                 writer.write_all(msg.as_bytes()).await?;
@@ -51,6 +56,7 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
                 writer.write_all(msg.as_bytes()).await?;
                 break Ok(());
             }
+            Response::None => {}
         }
     }
 }
