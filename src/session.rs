@@ -1,4 +1,7 @@
-use crate::{parser::Command, response::Response};
+use crate::{
+    parser::{Command, parse_command},
+    response::Response,
+};
 
 // Represents a session with an SMTP client
 pub struct Session {
@@ -13,6 +16,9 @@ pub struct Session {
 #[derive(Debug)]
 pub enum SessionState {
     Command,
+    HeloRecieved,
+    MailFromRecieved,
+    RcptRecieved,
     Data,
 }
 
@@ -32,26 +38,10 @@ impl Session {
     // Applies a command to the session and returns a response
     pub fn apply_command(&mut self, cmd: Command) -> Response {
         match cmd {
-            Command::Helo(domain) => {
-                self.helo = Some(domain.clone());
-                Response::Message(format!("250 Hello {}\r\n", domain))
-            }
-            Command::MailFrom(email) => {
-                self.mail_from = Some(email.clone());
-                Response::Message(format!("250 {} OK\r\n", email))
-            }
-            Command::RcptTo(email) => {
-                if self.mail_from.is_none() {
-                    Response::Message(format!("503 Error: Need From mail\r\n"))
-                } else {
-                    self.recipients.push(email.clone());
-                    Response::Message(format!("250 {} OK\r\n", email))
-                }
-            }
-            Command::Data => {
-                self.state = SessionState::Data;
-                Response::Message(format!("354 Start mail input\r\n"))
-            }
+            Command::Helo(domain) => self.handle_helo(domain),
+            Command::MailFrom(email) => self.handle_mail_from(email),
+            Command::RcptTo(email) => self.handle_rcpt_to(email),
+            Command::Data => self.handle_data_start(),
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
             Command::Unknown => Response::Close(format!("505 Unknown Command\r\n")),
         }
@@ -59,15 +49,69 @@ impl Session {
 
     // Handles data input during the DATA state and returns a response
     pub fn handle_data(&mut self, line: &str) -> Response {
-        if line.trim() == "<CRFL>.<CRFL>" {
+        if line.trim() == "." {
             println!("EMAIL:\n{}", self.buffer);
             self.buffer.clear();
-
+            self.recipients.clear();
             self.state = SessionState::Command;
             Response::Message(format!("250 OK\r\n"))
         } else {
             self.buffer.push_str(&line);
             Response::None
+        }
+    }
+
+    // Based on the request we got, update the session state and return a response
+    pub fn handle_session(&mut self, line: &str) -> Response {
+        match self.state {
+            SessionState::Command
+            | SessionState::HeloRecieved
+            | SessionState::MailFromRecieved
+            | SessionState::RcptRecieved => {
+                let cmd = parse_command(line);
+                self.apply_command(cmd)
+            }
+            SessionState::Data => self.handle_data(line),
+        }
+    }
+
+    // Handle the HELO command
+    pub fn handle_helo(&mut self, domain: String) -> Response {
+        self.helo = Some(domain);
+        self.state = SessionState::HeloRecieved;
+        Response::Message(format!(
+            "250 Hello {}, pleased to meet you\r\n",
+            self.helo.as_ref().unwrap()
+        ))
+    }
+
+    // Handle the MAIL FROM command
+    pub fn handle_mail_from(&mut self, email: String) -> Response {
+        self.mail_from = Some(email);
+        self.state = SessionState::MailFromRecieved;
+        Response::Message(format!("250 OK\r\n",))
+    }
+
+    // Handle the RCPT TO command
+    pub fn handle_rcpt_to(&mut self, email: String) -> Response {
+        if self.mail_from.is_none() {
+            Response::Message(format!("503 Error: Need From mail\r\n"))
+        } else {
+            self.recipients.push(email);
+            self.state = SessionState::RcptRecieved;
+            Response::Message(format!("250 OK\r\n",))
+        }
+    }
+
+    // Handle the DATA command
+    pub fn handle_data_start(&mut self) -> Response {
+        if self.mail_from.is_none() {
+            return Response::Message(format!("503 Error: Need From mail\r\n"));
+        } else if self.recipients.is_empty() {
+            return Response::Message(format!("503 Error: Need Rcpt mail\r\n"));
+        } else {
+            self.state = SessionState::Data;
+            Response::Message(format!("354 Start mail input\r\n"))
         }
     }
 }

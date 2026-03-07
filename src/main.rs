@@ -3,7 +3,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::{parser::parse_command, response::Response, session::SessionState};
+use crate::response::Response;
 
 mod parser;
 mod response;
@@ -51,15 +51,7 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
         reader.read_line(&mut line).await?;
 
         // having the response based on the session state
-        let response = match session.state {
-            // if the session is in the command state, parse the command and apply it
-            SessionState::Command => {
-                let cmd = parse_command(&line);
-                session.apply_command(cmd)
-            }
-            // if the session is in the data state, handle the data line
-            SessionState::Data => session.handle_data(&line),
-        };
+        let response = session.handle_session(&line);
 
         // based on the response, write the message or close the connection
         match response {
