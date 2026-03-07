@@ -1,3 +1,5 @@
+
+// All the commands supported by the SMTP parser
 pub enum Command {
     Helo(String),
     MailFrom(String),
@@ -7,9 +9,11 @@ pub enum Command {
     Unknown,
 }
 
+// Parses a command from a line of input
 pub fn parse_command(line: &str) -> Command {
     let input = line.trim();
 
+    // Parse the command based on the input line
     if input.starts_with("HELO") {
         let domain = input.strip_prefix("HELO ").unwrap_or(" ");
         Command::Helo(domain.to_string())

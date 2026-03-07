@@ -1,5 +1,6 @@
 use crate::{parser::Command, response::Response};
 
+// Represents a session with an SMTP client
 pub struct Session {
     helo: Option<String>,
     mail_from: Option<String>,
@@ -8,13 +9,16 @@ pub struct Session {
     buffer: String,
 }
 
+// Session state enum to track the current state of the session
 #[derive(Debug)]
 pub enum SessionState {
     Command,
     Data,
 }
 
+// Implements for the Session struct
 impl Session {
+    // Creates a new Session instance
     pub fn new() -> Session {
         Session {
             helo: None,
@@ -25,6 +29,7 @@ impl Session {
         }
     }
 
+    // Applies a command to the session and returns a response
     pub fn apply_command(&mut self, cmd: Command) -> Response {
         match cmd {
             Command::Helo(domain) => {
@@ -52,6 +57,7 @@ impl Session {
         }
     }
 
+    // Handles data input during the DATA state and returns a response
     pub fn handle_data(&mut self, line: &str) -> Response {
         if line.trim() == "<CRFL>.<CRFL>" {
             println!("EMAIL:\n{}", self.buffer);
