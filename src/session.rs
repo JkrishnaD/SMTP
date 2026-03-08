@@ -3,7 +3,7 @@ use diesel::{Connection, SqliteConnection};
 use crate::{
     parser::{Command, parse_command},
     response::Response,
-    storage::save_email,
+    storage::{get_mails, save_email},
 };
 
 // Represents a session with an SMTP client
@@ -53,27 +53,29 @@ impl Session {
     // Handles data input during the DATA state and returns a response
     pub fn handle_data(&mut self, line: &str, conn: &mut SqliteConnection) -> Response {
         if line.trim() == "." {
-            let email = self
-                .mail_from
-                .clone()
-                .unwrap_or_else(|| "unknown@sender.com".to_string());
+            let email = self.mail_from.clone().unwrap();
 
-            // Save the email to the database
-            conn.transaction::<(), diesel::result::Error, _>(|conn| {
+            let res = conn.transaction::<(), diesel::result::Error, _>(|conn| {
+                println!("Database Transaction Started");
+                println!("Saving email from: {}", email);
+
                 let _ = save_email(conn, email, self.recipients.clone(), self.buffer.clone());
+                println!(
+                    "Successfully saved email and {} recipients",
+                    self.recipients.len()
+                );
                 Ok(())
-            })
-            .expect("Failed to save into database");
+            });
 
-            println!("EMAIL:\n{}", self.buffer);
-
-            // clearing the buffer and recipients after successful save
-            self.buffer.clear();
-            self.recipients.clear();
-
-            // updating the session state to Command after successful data save
-            self.state = SessionState::Command;
-            Response::Message(format!("250 OK\r\n"))
+            match res {
+                Ok(_) => {
+                    self.buffer.clear();
+                    self.recipients.clear();
+                    self.state = SessionState::Command;
+                    Response::Message(format!("250 OK\r\n"))
+                }
+                Err(_) => Response::Close(format!("500 Internal Server Error\r\n")),
+            }
         } else {
             self.buffer.push_str(&line);
             Response::None

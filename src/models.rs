@@ -4,14 +4,14 @@ use diesel::prelude::{Insertable, Queryable, Selectable};
 use crate::schema::{emails, recipients};
 
 #[derive(Queryable, Selectable, Debug)]
-// #[diesel(table_name = emails)]
+#[diesel(table_name = emails)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Email {
-    pub id: Option<i32>,
+    pub id: i32,
     pub sender: String,
     pub subject: Option<String>,
     pub body: String,
-    pub created_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]

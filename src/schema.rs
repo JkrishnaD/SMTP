@@ -2,17 +2,17 @@
 
 diesel::table! {
     emails (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         sender -> Text,
         subject -> Nullable<Text>,
         body -> Text,
-        created_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
     }
 }
 
 diesel::table! {
     recipients (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         email_id -> Integer,
         recipient -> Text,
     }
