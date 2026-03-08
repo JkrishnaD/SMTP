@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1.50.0", features = ["full"] }
+diesel = { version = "2.1", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "chrono"] }
+dotenvy = "0.15"
+chrono = "0.4"
