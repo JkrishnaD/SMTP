@@ -1,6 +1,9 @@
+use diesel::{Connection, SqliteConnection};
+
 use crate::{
     parser::{Command, parse_command},
     response::Response,
+    storage::save_email,
 };
 
 // Represents a session with an SMTP client
@@ -48,11 +51,27 @@ impl Session {
     }
 
     // Handles data input during the DATA state and returns a response
-    pub fn handle_data(&mut self, line: &str) -> Response {
+    pub fn handle_data(&mut self, line: &str, conn: &mut SqliteConnection) -> Response {
         if line.trim() == "." {
+            let email = self
+                .mail_from
+                .clone()
+                .unwrap_or_else(|| "unknown@sender.com".to_string());
+
+            // Save the email to the database
+            conn.transaction::<(), diesel::result::Error, _>(|conn| {
+                let _ = save_email(conn, email, self.recipients.clone(), self.buffer.clone());
+                Ok(())
+            })
+            .expect("Failed to save into database");
+
             println!("EMAIL:\n{}", self.buffer);
+
+            // clearing the buffer and recipients after successful save
             self.buffer.clear();
             self.recipients.clear();
+
+            // updating the session state to Command after successful data save
             self.state = SessionState::Command;
             Response::Message(format!("250 OK\r\n"))
         } else {
@@ -62,7 +81,7 @@ impl Session {
     }
 
     // Based on the request we got, update the session state and return a response
-    pub fn handle_session(&mut self, line: &str) -> Response {
+    pub fn handle_session(&mut self, line: &str, conn: &mut SqliteConnection) -> Response {
         match self.state {
             SessionState::Command
             | SessionState::HeloRecieved
@@ -71,7 +90,7 @@ impl Session {
                 let cmd = parse_command(line);
                 self.apply_command(cmd)
             }
-            SessionState::Data => self.handle_data(line),
+            SessionState::Data => self.handle_data(line, conn),
         }
     }
 

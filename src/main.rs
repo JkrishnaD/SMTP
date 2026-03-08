@@ -1,3 +1,4 @@
+use diesel::{Connection, SqliteConnection};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
@@ -5,8 +6,11 @@ use tokio::{
 
 use crate::response::Response;
 
+mod storage;
+mod models;
 mod parser;
 mod response;
+mod schema;
 mod session;
 
 #[tokio::main]
@@ -32,6 +36,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
     println!("Socket stream: {:?}", socket);
 
+    // establishing a connection to the SQLite database
+    let mut conn = SqliteConnection::establish("emails.db").expect("Failed to connect DB");
+
     // writing the initial response to the client
     socket.write_all(b"220 simple-smtp ready\r\n").await?;
 
@@ -51,7 +58,7 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
         reader.read_line(&mut line).await?;
 
         // having the response based on the session state
-        let response = session.handle_session(&line);
+        let response = session.handle_session(&line, &mut conn);
 
         // based on the response, write the message or close the connection
         match response {
