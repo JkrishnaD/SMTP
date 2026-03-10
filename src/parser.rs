@@ -1,10 +1,10 @@
-
 // All the commands supported by the SMTP parser
 pub enum Command {
     Helo(String),
     MailFrom(String),
     RcptTo(String),
     Data,
+    List(String),
     Quit,
     Unknown,
 }
@@ -25,6 +25,9 @@ pub fn parse_command(line: &str) -> Command {
         Command::RcptTo(email.to_string())
     } else if input.starts_with("DATA") {
         Command::Data
+    } else if input.starts_with("LIST") {
+        let email = input.strip_prefix("LIST ").unwrap_or(" ");
+        Command::List(email.to_string())
     } else if input.starts_with("QUIT") {
         Command::Quit
     } else {

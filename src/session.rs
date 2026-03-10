@@ -39,12 +39,13 @@ impl Session {
     }
 
     // Applies a command to the session and returns a response
-    pub fn apply_command(&mut self, cmd: Command) -> Response {
+    pub fn apply_command(&mut self, cmd: Command, conn: &mut SqliteConnection) -> Response {
         match cmd {
             Command::Helo(domain) => self.handle_helo(domain),
             Command::MailFrom(email) => self.handle_mail_from(email),
             Command::RcptTo(email) => self.handle_rcpt_to(email),
             Command::Data => self.handle_data_start(),
+            Command::List(email) => self.handle_list(conn, email),
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
             Command::Unknown => Response::Close(format!("505 Unknown Command\r\n")),
         }
@@ -82,6 +83,27 @@ impl Session {
         }
     }
 
+    pub fn handle_list(&mut self, conn: &mut SqliteConnection, user: String) -> Response {
+        let res = get_mails(conn, user);
+        match res {
+            Ok(mails) => {
+                if mails.is_empty() {
+                    return Response::Message(format!("250 No mails found\r\n"));
+                }
+
+                let mut response = String::new();
+
+                for mail in mails {
+                    response.push_str(&format!("MAIL: {} {}\r\n", mail.id, mail.sender));
+                }
+                response.push_str("250 OK\r\n");
+
+                Response::Message(response)
+            }
+            Err(_) => Response::Close(format!("500 Internal Server Error\r\n")),
+        }
+    }
+
     // Based on the request we got, update the session state and return a response
     pub fn handle_session(&mut self, line: &str, conn: &mut SqliteConnection) -> Response {
         match self.state {
@@ -90,7 +112,7 @@ impl Session {
             | SessionState::MailFromRecieved
             | SessionState::RcptRecieved => {
                 let cmd = parse_command(line);
-                self.apply_command(cmd)
+                self.apply_command(cmd, conn)
             }
             SessionState::Data => self.handle_data(line, conn),
         }
