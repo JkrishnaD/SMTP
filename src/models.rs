@@ -1,4 +1,3 @@
-use chrono::NaiveDateTime;
 use diesel::prelude::{Insertable, Queryable, Selectable};
 
 use crate::schema::{emails, recipients};
@@ -9,9 +8,6 @@ use crate::schema::{emails, recipients};
 pub struct Email {
     pub id: i32,
     pub sender: String,
-    pub subject: Option<String>,
-    pub body: String,
-    pub created_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]

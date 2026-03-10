@@ -3,7 +3,7 @@ use diesel::{Connection, SqliteConnection};
 use crate::{
     parser::{Command, parse_command},
     response::Response,
-    storage::{get_mails, save_email},
+    storage::Store,
 };
 
 // Represents a session with an SMTP client
@@ -11,7 +11,7 @@ pub struct Session {
     helo: Option<String>,
     mail_from: Option<String>,
     recipients: Vec<String>,
-    pub state: SessionState,
+    state: SessionState,
     buffer: String,
 }
 
@@ -60,7 +60,7 @@ impl Session {
                 println!("Database Transaction Started");
                 println!("Saving email from: {}", email);
 
-                let _ = save_email(conn, email, self.recipients.clone(), self.buffer.clone());
+                Store::save_email(conn, email, self.recipients.clone(), self.buffer.clone())?;
                 println!(
                     "Successfully saved email and {} recipients",
                     self.recipients.len()
@@ -84,7 +84,7 @@ impl Session {
     }
 
     pub fn handle_list(&mut self, conn: &mut SqliteConnection, user: String) -> Response {
-        let res = get_mails(conn, user);
+        let res = Store::get_mails(conn, user);
         match res {
             Ok(mails) => {
                 if mails.is_empty() {
@@ -105,16 +105,17 @@ impl Session {
     }
 
     // Based on the request we got, update the session state and return a response
-    pub fn handle_session(&mut self, line: &str, conn: &mut SqliteConnection) -> Response {
+    pub fn handle_session(&mut self, line: &str, store: &Store) -> Response {
+        let mut conn = store.pool.get().expect("Failed to get Database Connection");
         match self.state {
             SessionState::Command
             | SessionState::HeloRecieved
             | SessionState::MailFromRecieved
             | SessionState::RcptRecieved => {
                 let cmd = parse_command(line);
-                self.apply_command(cmd, conn)
+                self.apply_command(cmd, &mut conn)
             }
-            SessionState::Data => self.handle_data(line, conn),
+            SessionState::Data => self.handle_data(line, &mut conn),
         }
     }
 

@@ -1,17 +1,18 @@
-use diesel::{Connection, SqliteConnection};
+use diesel::r2d2::{ConnectionManager, Pool};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
 
-use crate::response::Response;
+use crate::{config::CONFIG, response::Response, storage::Store};
 
-mod storage;
+mod config;
 mod models;
 mod parser;
 mod response;
 mod schema;
 mod session;
+mod storage;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,7 +20,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listerner = TcpListener::bind("127.0.0.1:2525").await?;
     println!("Starting SMTP server on 2525");
 
+    // getting the database url from the config and creating a connection pool
+    let database_url = &CONFIG.db_url;
+    let manager = ConnectionManager::new(database_url);
+    let pool = Pool::builder()
+        .build(manager)
+        .expect("Failed to create a database connection");
+    let store = Store::new(pool);
+
     loop {
+        let store = store.clone();
         // accepting a new connection and getting
         // the socket stream and address from the listener
         let (socket, addr) = listerner.accept().await?;
@@ -27,17 +37,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // spawning a new task to handle the client
         tokio::spawn(async move {
-            let _ = handle_client(socket).await;
+            if let Err(e) = handle_client(socket, store).await {
+                eprintln!("Client {} error: {}", addr, e);
+            }
         });
     }
 }
 
 // the function that handles the communication with the client
-async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_client(
+    mut socket: TcpStream,
+    store: Store,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("Socket stream: {:?}", socket);
-
-    // establishing a connection to the SQLite database
-    let mut conn = SqliteConnection::establish("emails.db").expect("Failed to connect DB");
 
     // writing the initial response to the client
     socket.write_all(b"220 simple-smtp ready\r\n").await?;
@@ -58,7 +70,7 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
         reader.read_line(&mut line).await?;
 
         // having the response based on the session state
-        let response = session.handle_session(&line, &mut conn);
+        let response = session.handle_session(&line, &store);
 
         // based on the response, write the message or close the connection
         match response {
