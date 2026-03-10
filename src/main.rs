@@ -70,7 +70,7 @@ async fn handle_client(
         reader.read_line(&mut line).await?;
 
         // having the response based on the session state
-        let response = session.handle_session(&line, &store);
+        let response = session.handle_session(&line, &store).await;
 
         // based on the response, write the message or close the connection
         match response {

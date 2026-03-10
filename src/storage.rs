@@ -19,6 +19,25 @@ impl Store {
         Self { pool }
     }
 
+    pub async fn save_emails_async(
+        &self,
+        sender_addr: String,
+        recips: Vec<String>,
+        body_text: String,
+    ) -> Result<(), String> {
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+            Self::save_email(&mut conn, sender_addr, recips, body_text).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .unwrap()?;
+
+        Ok(())
+    }
+
     pub fn save_email(
         conn: &mut SqliteConnection,
         sender_addr: String,
@@ -55,15 +74,28 @@ impl Store {
         Ok(())
     }
 
+    pub async fn get_mails_async(&self, user: String) -> Result<Vec<Email>, String> {
+        let pool = self.pool.clone();
+
+        let mails = tokio::task::spawn_blocking(move || -> Result<Vec<Email>, String> {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+            Self::get_mails(&mut conn, user).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .unwrap()?;
+
+        Ok(mails)
+    }
+
     pub fn get_mails(
         conn: &mut SqliteConnection,
         user: String,
     ) -> Result<Vec<Email>, diesel::result::Error> {
-        // Use explicit paths to avoid "cannot find table" errors
         let results = emails::table
             .inner_join(recipients::table.on(recipients::email_id.eq(emails::id)))
             .filter(recipients::recipient.eq(user))
-            .select(Email::as_select()) // Requires #[derive(Selectable)] on Email
+            .select(Email::as_select())
             .load::<Email>(conn)?;
 
         Ok(results)

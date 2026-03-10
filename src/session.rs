@@ -1,5 +1,3 @@
-use diesel::{Connection, SqliteConnection};
-
 use crate::{
     parser::{Command, parse_command},
     response::Response,
@@ -39,36 +37,26 @@ impl Session {
     }
 
     // Applies a command to the session and returns a response
-    pub fn apply_command(&mut self, cmd: Command, conn: &mut SqliteConnection) -> Response {
+    pub async fn apply_command(&mut self, cmd: Command, store: &Store) -> Response {
         match cmd {
             Command::Helo(domain) => self.handle_helo(domain),
             Command::MailFrom(email) => self.handle_mail_from(email),
             Command::RcptTo(email) => self.handle_rcpt_to(email),
             Command::Data => self.handle_data_start(),
-            Command::List(email) => self.handle_list(conn, email),
+            Command::List(email) => self.handle_list(email, store).await,
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
             Command::Unknown => Response::Close(format!("505 Unknown Command\r\n")),
         }
     }
 
     // Handles data input during the DATA state and returns a response
-    pub fn handle_data(&mut self, line: &str, conn: &mut SqliteConnection) -> Response {
+    pub async fn handle_data(&mut self, line: &str, store: &Store) -> Response {
         if line.trim() == "." {
-            let email = self.mail_from.clone().unwrap();
+            let email = self.mail_from.clone().unwrap_or_default();
+            let recipients = self.recipients.clone();
+            let buffer = self.buffer.clone();
 
-            let res = conn.transaction::<(), diesel::result::Error, _>(|conn| {
-                println!("Database Transaction Started");
-                println!("Saving email from: {}", email);
-
-                Store::save_email(conn, email, self.recipients.clone(), self.buffer.clone())?;
-                println!(
-                    "Successfully saved email and {} recipients",
-                    self.recipients.len()
-                );
-                Ok(())
-            });
-
-            match res {
+            match store.save_emails_async(email, recipients, buffer).await {
                 Ok(_) => {
                     self.buffer.clear();
                     self.recipients.clear();
@@ -78,13 +66,17 @@ impl Session {
                 Err(_) => Response::Close(format!("500 Internal Server Error\r\n")),
             }
         } else {
-            self.buffer.push_str(&line);
+            self.buffer.push_str(line);
             Response::None
         }
     }
 
-    pub fn handle_list(&mut self, conn: &mut SqliteConnection, user: String) -> Response {
-        let res = Store::get_mails(conn, user);
+    pub async fn handle_list(&mut self, user: String, store: &Store) -> Response {
+        let res = store
+            .get_mails_async(user)
+            .await
+            .map_err(|e| Response::Close(format!("500 Internal Server Error: {}\r\n", e)));
+
         match res {
             Ok(mails) => {
                 if mails.is_empty() {
@@ -100,22 +92,21 @@ impl Session {
 
                 Response::Message(response)
             }
-            Err(_) => Response::Close(format!("500 Internal Server Error\r\n")),
+            Err(err) => err,
         }
     }
 
     // Based on the request we got, update the session state and return a response
-    pub fn handle_session(&mut self, line: &str, store: &Store) -> Response {
-        let mut conn = store.pool.get().expect("Failed to get Database Connection");
+    pub async fn handle_session(&mut self, line: &str, store: &Store) -> Response {
         match self.state {
             SessionState::Command
             | SessionState::HeloRecieved
             | SessionState::MailFromRecieved
             | SessionState::RcptRecieved => {
                 let cmd = parse_command(line);
-                self.apply_command(cmd, &mut conn)
+                self.apply_command(cmd, store).await
             }
-            SessionState::Data => self.handle_data(line, &mut conn),
+            SessionState::Data => self.handle_data(line, store).await,
         }
     }
 
