@@ -1,11 +1,13 @@
 // All the commands supported by the SMTP parser
 pub enum Command {
+    Ehlo(String),
     Helo(String),
     MailFrom(String),
     RcptTo(String),
     Data,
     List(String),
     Quit,
+    Reset,
     Unknown,
 }
 
@@ -14,7 +16,10 @@ pub fn parse_command(line: &str) -> Command {
     let input = line.trim();
 
     // Parse the command based on the input line
-    if input.starts_with("HELO") {
+    if input.starts_with("EHLO") {
+        let domain = input.strip_prefix("EHLO ").unwrap_or(" ");
+        Command::Ehlo(domain.to_string())
+    } else if input.starts_with("HELO") {
         let domain = input.strip_prefix("HELO ").unwrap_or(" ");
         Command::Helo(domain.to_string())
     } else if input.starts_with("MAIL FROM:") {
@@ -30,6 +35,8 @@ pub fn parse_command(line: &str) -> Command {
         Command::List(email.to_string())
     } else if input.starts_with("QUIT") {
         Command::Quit
+    } else if input.starts_with("RESET") {
+        Command::Reset
     } else {
         Command::Unknown
     }
