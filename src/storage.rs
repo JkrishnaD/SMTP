@@ -1,4 +1,5 @@
 use diesel::{
+    dsl::exists,
     prelude::*,
     r2d2::{ConnectionManager, Pool},
     sqlite::SqliteConnection,
@@ -99,5 +100,25 @@ impl Store {
             .load::<Email>(conn)?;
 
         Ok(results)
+    }
+
+    pub async fn verify_email(&self, email: String) -> Result<bool, String> {
+        let pool = self.pool.clone();
+
+        let exist = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+            let res = diesel::select(exists(
+                recipients::table.filter(recipients::recipient.eq(email)),
+            ))
+            .get_result::<bool>(&mut conn)
+            .map_err(|e| e.to_string())?;
+
+            Ok(res)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+
+        Ok(exist)
     }
 }

@@ -8,6 +8,8 @@ use crate::{
 pub struct Session {
     ehlo: Option<String>,
     helo: Option<String>,
+    tls_active: bool,
+    authenticated: bool,
     mail_from: Option<String>,
     recipients: Vec<String>,
     state: SessionState,
@@ -18,12 +20,7 @@ pub struct Session {
 #[derive(Debug)]
 pub enum SessionState {
     Command,
-    EhloVerified,
-    HeloRecieved,
-    MailFromRecieved,
-    RcptRecieved,
     Data,
-    Reset,
 }
 
 // Implements for the Session struct
@@ -33,6 +30,8 @@ impl Session {
         Session {
             ehlo: None,
             helo: None,
+            tls_active: false,
+            authenticated: false,
             mail_from: None,
             recipients: Vec::new(),
             state: SessionState::Command,
@@ -44,11 +43,16 @@ impl Session {
     pub async fn apply_command(&mut self, cmd: Command, store: &Store) -> Response {
         match cmd {
             Command::Ehlo(domain) => self.handle_ehlo(domain),
+            Command::StartTls => self.handle_start_tls(),
+            Command::Auth(email) => self.handle_auth(email),
             Command::Helo(domain) => self.handle_helo(domain),
             Command::MailFrom(email) => self.handle_mail_from(email),
             Command::RcptTo(email) => self.handle_rcpt_to(email),
             Command::Data => self.handle_data_start(),
             Command::List(email) => self.handle_list(email, store).await,
+            Command::Vrfy(email) => self.handle_vrfy(email, store).await,
+            Command::Noop => self.handle_noop(),
+            Command::Help => self.handle_help(),
             Command::Reset => self.handle_reset(),
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
             Command::Unknown => Response::Message(format!("500 Unknown Command\r\n")),
@@ -56,9 +60,31 @@ impl Session {
     }
 
     pub fn handle_ehlo(&mut self, domain: String) -> Response {
-        self.ehlo = Some(domain);
-        self.state = SessionState::EhloVerified;
-        Response::Message("250-localhost\r\n250-SIZE 10485760\r\n250 PIPELINING\r\n".to_string())
+        self.ehlo = Some(domain.clone());
+
+        Response::Message(format!(
+            "250-{}\r\n\
+        250-PIPELINING\r\n\
+        250-SIZE 10485760\r\n\
+        250-8BITMIME\r\n\
+        250-STARTTLS\r\n\
+        250 AUTH LOGIN PLAIN\r\n",
+            domain
+        ))
+    }
+
+    pub fn handle_start_tls(&mut self) -> Response {
+        self.tls_active = true;
+        Response::Message(format!("220 Ready to start TLS\r\n"))
+    }
+
+    pub fn handle_auth(&mut self, email: String) -> Response {
+        if !self.tls_active {
+            return Response::Message("538 Encryption required for authentication\r\n".into());
+        }
+
+        self.authenticated = true;
+        Response::Message(format!("235 mail {} Authentication successful\r\n", email))
     }
 
     // Handles data input during the DATA state and returns a response
@@ -111,12 +137,7 @@ impl Session {
     // Based on the request we got, update the session state and return a response
     pub async fn handle_session(&mut self, line: &str, store: &Store) -> Response {
         match self.state {
-            SessionState::Command
-            | SessionState::Reset
-            | SessionState::EhloVerified
-            | SessionState::HeloRecieved
-            | SessionState::MailFromRecieved
-            | SessionState::RcptRecieved => {
+            SessionState::Command => {
                 let cmd = parse_command(line);
                 self.apply_command(cmd, store).await
             }
@@ -127,7 +148,6 @@ impl Session {
     // Handle the HELO command
     pub fn handle_helo(&mut self, domain: String) -> Response {
         self.helo = Some(domain);
-        self.state = SessionState::HeloRecieved;
         Response::Message(format!(
             "250 Hello {}, pleased to meet you\r\n",
             self.helo.as_ref().unwrap()
@@ -136,11 +156,10 @@ impl Session {
 
     // Handle the MAIL FROM command
     pub fn handle_mail_from(&mut self, email: String) -> Response {
-        if self.ehlo.is_none() || self.helo.is_none() {
-            return Response::Message(format!("503 Error: Need EHLO and HELO first\r\n"));
-        };
+        if self.ehlo.is_none() && self.helo.is_none() {
+            return Response::Message("503 Send HELO/EHLO first\r\n".into());
+        }
         self.mail_from = Some(email);
-        self.state = SessionState::MailFromRecieved;
         Response::Message(format!("250 OK\r\n",))
     }
 
@@ -150,7 +169,6 @@ impl Session {
             Response::Message(format!("503 Error: Need From mail\r\n"))
         } else {
             self.recipients.push(email);
-            self.state = SessionState::RcptRecieved;
             Response::Message(format!("250 OK\r\n",))
         }
     }
@@ -167,16 +185,45 @@ impl Session {
         }
     }
 
+    // Handle the NOOP command
+    pub fn handle_noop(&mut self) -> Response {
+        // It does nothing but respond with success and keep the session open
+        Response::Message(format!("250 OK\r\n"))
+    }
+
+    pub async fn handle_vrfy(&mut self, email: String, store: &Store) -> Response {
+        let email = store.verify_email(email).await;
+        match email {
+            Ok(true) => Response::Message("250 User exists\r\n".into()),
+            Ok(false) => Response::Message("550 No such user\r\n".into()),
+            Err(_) => Response::Message("451 Temporary error\r\n".into()),
+        }
+    }
+
+    pub fn handle_help(&mut self) -> Response {
+        let commands = "EHLO <domain>\r\n\
+            HELO <user>\r\n\
+            STARTTLS - for TLS encryption\r\n\
+            AUTH: <email> - for authentication\r\n\
+            MAIL FROM: <email>\r\n\
+            RCPT TO: <email>\r\n\
+            DATA: <message>\r\n\
+            LIST: <user>\r\n\
+            NOOP\r\n\
+            RSET\r\n\
+            HELP - for help\r\n\
+            QUIT";
+        Response::Message(format!("250 Help: {}\r\n", commands))
+    }
+
+    // Handle the RSET command
     pub fn handle_reset(&mut self) -> Response {
+        // It resets the session state to the initial state, clearing any pending mail or recipients
         self.mail_from = None;
         self.recipients.clear();
         self.buffer.clear();
 
-        if self.helo.is_some() {
-            self.state = SessionState::EhloVerified;
-        } else {
-            self.state = SessionState::Command;
-        }
+        self.state = SessionState::Command;
 
         Response::Message(format!("250 Reset OK\r\n"))
     }
