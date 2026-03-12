@@ -12,7 +12,7 @@ pub enum Command {
     Noop,
     Help,
     Quit,
-    Reset,
+    Rset,
     Unknown,
 }
 
@@ -52,8 +52,8 @@ pub fn parse_command(line: &str) -> Command {
         Command::List(email.to_string())
     } else if input.starts_with("QUIT") {
         Command::Quit
-    } else if input.starts_with("RESET") {
-        Command::Reset
+    } else if input.starts_with("RSET") {
+        Command::Rset
     } else {
         Command::Unknown
     }

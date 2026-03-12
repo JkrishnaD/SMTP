@@ -53,7 +53,7 @@ impl Session {
             Command::Vrfy(email) => self.handle_vrfy(email, store).await,
             Command::Noop => self.handle_noop(),
             Command::Help => self.handle_help(),
-            Command::Reset => self.handle_reset(),
+            Command::Rset => self.handle_rset(),
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
             Command::Unknown => Response::Message(format!("500 Unknown Command\r\n")),
         }
@@ -217,7 +217,7 @@ impl Session {
     }
 
     // Handle the RSET command
-    pub fn handle_reset(&mut self) -> Response {
+    pub fn handle_rset(&mut self) -> Response {
         // It resets the session state to the initial state, clearing any pending mail or recipients
         self.mail_from = None;
         self.recipients.clear();
