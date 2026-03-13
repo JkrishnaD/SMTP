@@ -1,3 +1,5 @@
+use crate::error::ParseError;
+
 // All the commands supported by the SMTP parser
 pub enum Command {
     Ehlo(String),
@@ -13,48 +15,69 @@ pub enum Command {
     Help,
     Quit,
     Rset,
-    Unknown,
 }
 
 // Parses a command from a line of input
-pub fn parse_command(line: &str) -> Command {
-    let input = line.trim();
+pub fn parse_command(input: &str) -> Result<Command, ParseError> {
+    let input = input.trim();
 
-    // Parse the command based on the input line
-    if input.starts_with("EHLO") {
-        let domain = input.strip_prefix("EHLO ").unwrap_or(" ");
-        Command::Ehlo(domain.to_string())
-    } else if input.starts_with("STARTTLS") {
-        Command::StartTls
-    } else if input.starts_with("AUTH") {
-        let email = input.strip_prefix("AUTH ").unwrap_or(" ");
-        Command::Auth(email.to_string())
-    } else if input.starts_with("HELO") {
-        let domain = input.strip_prefix("HELO ").unwrap_or(" ");
-        Command::Helo(domain.to_string())
-    } else if input.starts_with("MAIL FROM:") {
-        let email = input.strip_prefix("MAIL FROM:").unwrap_or(" ");
-        Command::MailFrom(email.to_string())
-    } else if input.starts_with("RCPT TO:") {
-        let email = input.strip_prefix("RCPT TO:").unwrap_or(" ");
-        Command::RcptTo(email.to_string())
-    } else if input.starts_with("DATA") {
-        Command::Data
-    } else if input.starts_with("VRFY") {
-        let email = input.strip_prefix("VRFY ").unwrap_or(" ");
-        Command::Vrfy(email.to_string())
-    } else if input.starts_with("NOOP") {
-        Command::Noop
-    } else if input.starts_with("HELP") {
-        Command::Help
-    } else if input.starts_with("LIST") {
-        let email = input.strip_prefix("LIST ").unwrap_or(" ");
-        Command::List(email.to_string())
-    } else if input.starts_with("QUIT") {
-        Command::Quit
-    } else if input.starts_with("RSET") {
-        Command::Rset
-    } else {
-        Command::Unknown
+    // Split the input into command and arguments
+    let mut parts = input.splitn(2, ' ');
+    // considering the first part as the command and converting it to uppercase
+    let cmd = parts.next().unwrap_or("").to_ascii_uppercase();
+    // the rest as the arguments
+    let args = parts.next().unwrap_or("").trim();
+
+    match cmd.as_str() {
+        "EHLO" => {
+            if args.is_empty() {
+                Err(ParseError::MissingArguments("EHLO requires domain"))
+            } else {
+                Ok(Command::Ehlo(args.to_string()))
+            }
+        }
+        "STARTTLS" => Ok(Command::StartTls),
+        "AUTH" => match args.to_ascii_uppercase().as_str() {
+            "LOGIN" | "PLAIN" => Ok(Command::Auth(args.to_string())),
+            _ => Err(ParseError::InvalidCommand),
+        },
+        "HELO" => Ok(Command::Helo(args.to_string())),
+        "MAIL" => {
+            let upper_args = args.to_ascii_uppercase();
+            if upper_args.starts_with("FROM:") {
+                let addr = args[5..].trim();
+
+                if addr.is_empty() {
+                    return Err(ParseError::MissingArguments("MAIL FROM requires address"));
+                }
+                Ok(Command::MailFrom(
+                    addr.trim().trim_matches(&['<', '>']).to_string(),
+                ))
+            } else {
+                Err(ParseError::InvalidSyntax("MAIL must use FROM:"))
+            }
+        }
+        "RCPT" => {
+            let upper_args = args.to_ascii_uppercase();
+            if upper_args.starts_with("TO:") {
+                let addr = upper_args[3..].trim();
+                if addr.is_empty() {
+                    return Err(ParseError::MissingArguments("RCPT TO requires address"));
+                }
+                Ok(Command::RcptTo(
+                    addr.trim().trim_matches(&['<', '>']).to_string(),
+                ))
+            } else {
+                Err(ParseError::InvalidSyntax("RCPT must use TO:"))
+            }
+        }
+        "DATA" => Ok(Command::Data),
+        "VRFY" => Ok(Command::Vrfy(args.to_string())),
+        "NOOP" => Ok(Command::Noop),
+        "HELP" => Ok(Command::Help),
+        "LIST" => Ok(Command::List(args.to_string())),
+        "QUIT" => Ok(Command::Quit),
+        "RSET" => Ok(Command::Rset),
+        _ => Err(ParseError::InvalidCommand),
     }
 }

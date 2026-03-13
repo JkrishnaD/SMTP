@@ -55,7 +55,6 @@ impl Session {
             Command::Help => self.handle_help(),
             Command::Rset => self.handle_rset(),
             Command::Quit => Response::Close(format!("221 Bye\r\n")),
-            Command::Unknown => Response::Message(format!("500 Unknown Command\r\n")),
         }
     }
 
@@ -139,7 +138,10 @@ impl Session {
         match self.state {
             SessionState::Command => {
                 let cmd = parse_command(line);
-                self.apply_command(cmd, store).await
+                match cmd {
+                    Ok(c) => self.apply_command(c, store).await,
+                    Err(err) => Response::Message(format!("500 {}\r\n", err)),
+                }
             }
             SessionState::Data => self.handle_data(line, store).await,
         }

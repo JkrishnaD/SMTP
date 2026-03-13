@@ -13,6 +13,7 @@ mod response;
 mod schema;
 mod session;
 mod storage;
+mod error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
