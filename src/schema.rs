@@ -18,6 +18,15 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    users (id) {
+        id -> Integer,
+        email -> Text,
+        password_hash -> Text,
+        created_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(recipients -> emails (email_id));
 
-diesel::allow_tables_to_appear_in_same_query!(emails, recipients,);
+diesel::allow_tables_to_appear_in_same_query!(emails, recipients, users,);
