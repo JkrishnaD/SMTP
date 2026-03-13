@@ -73,8 +73,15 @@ impl Session {
     }
 
     pub fn handle_start_tls(&mut self) -> Response {
-        self.tls_active = true;
-        Response::Message(format!("220 Ready to start TLS\r\n"))
+        if self.tls_active {
+            Response::Message("454 TLS already active\r\n".into())
+        } else {
+            Response::StartTls
+        }
+    }
+
+    pub fn set_tls_state(&mut self, active: bool) {
+        self.tls_active = active;
     }
 
     pub fn handle_auth(&mut self, email: String) -> Response {
@@ -104,7 +111,7 @@ impl Session {
             }
         } else {
             self.buffer.push_str(line);
-            Response::None
+            Response::Message(format!("354 End data with <CR><LF>.<CR><LF>\r\n"))
         }
     }
 

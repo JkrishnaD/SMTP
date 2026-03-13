@@ -1,19 +1,25 @@
+use std::mem::replace;
+
 use diesel::r2d2::{ConnectionManager, Pool};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
+use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::TlsAcceptor;
+
+use crate::{
+    config::{CONFIG, Connection},
+    response::Response,
+    storage::Store,
+    tls::load_tls_config,
 };
 
-use crate::{config::CONFIG, response::Response, storage::Store};
-
 mod config;
+mod error;
 mod models;
 mod parser;
 mod response;
 mod schema;
 mod session;
 mod storage;
-mod error;
+mod tls;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,8 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to create a database connection");
     let store = Store::new(pool);
 
+    let tls_config_load = load_tls_config()?;
+    let tls_acceptor = TlsAcceptor::from(tls_config_load);
+
     loop {
         let store = store.clone();
+        let tls_acceptor = tls_acceptor.clone();
         // accepting a new connection and getting
         // the socket stream and address from the listener
         let (socket, addr) = listerner.accept().await?;
@@ -38,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // spawning a new task to handle the client
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, store).await {
+            if let Err(e) = handle_client(socket, store, tls_acceptor).await {
                 eprintln!("Client {} error: {}", addr, e);
             }
         });
@@ -47,28 +57,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // the function that handles the communication with the client
 async fn handle_client(
-    mut socket: TcpStream,
+    socket: TcpStream,
     store: Store,
+    tls_acceptor: TlsAcceptor,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Socket stream: {:?}", socket);
 
+    let mut conn = Connection::Tcp(socket);
     // writing the initial response to the client
-    socket.write_all(b"220 simple-smtp ready\r\n").await?;
-
-    // getting the reader and the writer from the socket
-    let (reader, mut writer) = socket.into_split();
-
-    // getting the buffered reader from the reader
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new(); // creating a new string to hold each line
+    conn.write_all(b"220 simple-smtp ready\r\n").await?;
 
     // creating a new session for each client
     let mut session = session::Session::new();
+    let mut line = String::new(); // creating a new string to hold each line
 
     loop {
         // clearing the line buffer before reading a new line
         line.clear();
-        reader.read_line(&mut line).await?;
+        conn.read_line(&mut line).await?;
 
         // having the response based on the session state
         let response = session.handle_session(&line, &store).await;
@@ -76,13 +82,24 @@ async fn handle_client(
         // based on the response, write the message or close the connection
         match response {
             Response::Message(msg) => {
-                writer.write_all(msg.as_bytes()).await?;
+                conn.write_all(msg.as_bytes()).await?;
+            }
+            Response::StartTls => {
+                conn.write_all(b"220 Ready to start TLS\r\n").await?;
+                if let Connection::Tcp(s) = replace(&mut conn, Connection::None) {
+                    // accept TLS connection
+                    let tls_stream = tls_acceptor.accept(s).await?;
+                    // update the connection to TLS from Tcp
+                    conn = Connection::Tls(tls_stream);
+                    // update the session TLS state
+                    session.set_tls_state(true);
+                    conn.write_all(b"Tls handshake successful!\r\n").await?;
+                }
             }
             Response::Close(msg) => {
-                writer.write_all(msg.as_bytes()).await?;
+                conn.write_all(msg.as_bytes()).await?;
                 break Ok(());
             }
-            Response::None => {}
         }
     }
 }
