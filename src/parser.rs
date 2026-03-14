@@ -51,7 +51,7 @@ pub fn parse_command(input: &str) -> Result<Command, ParseError> {
                     return Err(ParseError::MissingArguments("MAIL FROM requires address"));
                 }
                 Ok(Command::MailFrom(
-                    addr.trim().trim_matches(&['<', '>']).to_string(),
+                    addr.trim().trim_matches(['<', '>']).to_string(),
                 ))
             } else {
                 Err(ParseError::InvalidSyntax("MAIL must use FROM:"))
@@ -65,7 +65,7 @@ pub fn parse_command(input: &str) -> Result<Command, ParseError> {
                     return Err(ParseError::MissingArguments("RCPT TO requires address"));
                 }
                 Ok(Command::RcptTo(
-                    addr.trim().trim_matches(&['<', '>']).to_string(),
+                    addr.trim().trim_matches(['<', '>']).to_string(),
                 ))
             } else {
                 Err(ParseError::InvalidSyntax("RCPT must use TO:"))

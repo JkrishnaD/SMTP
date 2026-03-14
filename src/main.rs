@@ -90,7 +90,7 @@ async fn handle_client(
                     // accept TLS connection
                     let tls_stream = tls_acceptor.accept(s).await?;
                     // update the connection to TLS from Tcp
-                    conn = Connection::Tls(tls_stream);
+                    conn = Connection::Tls(Box::new(tls_stream));
                     // update the session TLS state
                     session.set_tls_state(true);
                     conn.write_all(b"Tls handshake successful!\r\n").await?;

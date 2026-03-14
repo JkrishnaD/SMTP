@@ -60,7 +60,7 @@ impl Session {
             Command::Noop => self.handle_noop(),
             Command::Help => self.handle_help(),
             Command::Rset => self.handle_rset(),
-            Command::Quit => Response::Close(format!("221 Bye\r\n")),
+            Command::Quit => Response::Close("221 Bye\r\n".to_string()),
         }
     }
 
@@ -95,7 +95,7 @@ impl Session {
             return Response::Message("538 Encryption required for authentication\r\n".into());
         }
 
-        if mechanism.to_ascii_uppercase() != "LOGIN" {
+        if !mechanism.eq_ignore_ascii_case("LOGIN") {
             return Response::Message("504 Only Auth LOGIN is supported\r\n".to_string());
         }
 
@@ -117,9 +117,9 @@ impl Session {
                     self.buffer.clear();
                     self.recipients.clear();
                     self.state = SessionState::Command;
-                    Response::Message(format!("250 OK\r\n"))
+                    Response::Message("250 OK\r\n".to_string())
                 }
-                Err(_) => Response::Close(format!("500 Internal Server Error\r\n")),
+                Err(_) => Response::Close("500 Internal Server Error\r\n".to_string()),
             }
         } else {
             self.buffer.push_str(line);
@@ -136,7 +136,7 @@ impl Session {
         match res {
             Ok(mails) => {
                 if mails.is_empty() {
-                    return Response::Message(format!("250 No mails found\r\n"));
+                    return Response::Message("250 No mails found\r\n".to_string());
                 }
 
                 let mut response = String::new();
@@ -228,52 +228,52 @@ impl Session {
             return Response::Message("503 Send HELO/EHLO first\r\n".into());
         }
 
-        if self.tls_active == false {
+        if !self.tls_active {
             return Response::Message("530 Tls handshake required\r\n".into());
         }
 
-        if self.authenticated == false {
+        if !self.authenticated {
             return Response::Message("530 Authentication required\r\n".into());
         }
 
         self.mail_from = Some(email);
-        Response::Message(format!("250 OK\r\n",))
+        Response::Message("250 OK\r\n".to_string())
     }
 
     // Handle the RCPT TO command
     pub fn handle_rcpt_to(&mut self, email: String) -> Response {
-        if self.tls_active == false {
+        if !self.tls_active {
             return Response::Message("530 Tls handshake required\r\n".into());
         }
 
-        if self.authenticated == false {
+        if !self.authenticated {
             return Response::Message("530 Authentication required\r\n".into());
         }
 
         if self.mail_from.is_none() {
-            Response::Message(format!("503 Error: Need From mail\r\n"))
+            Response::Message("503 Error: Need From mail\r\n".to_string())
         } else {
             self.recipients.push(email);
-            Response::Message(format!("250 OK\r\n",))
+            Response::Message("250 OK\r\n".to_string())
         }
     }
 
     // Handle the DATA command
     pub fn handle_data_start(&mut self) -> Response {
         if self.mail_from.is_none() {
-            return Response::Message(format!("503 Error: Need From mail\r\n"));
+            Response::Message("503 Error: Need From mail\r\n".to_string())
         } else if self.recipients.is_empty() {
-            return Response::Message(format!("503 Error: Need Rcpt mail\r\n"));
+            Response::Message("503 Error: Need Rcpt mail\r\n".to_string())
         } else {
             self.state = SessionState::Data;
-            Response::Message(format!("354 Start mail input\r\n"))
+            Response::Message("354 Start mail input\r\n".to_string())
         }
     }
 
     // Handle the NOOP command
     pub fn handle_noop(&mut self) -> Response {
         // It does nothing but respond with success and keep the session open
-        Response::Message(format!("250 OK\r\n"))
+        Response::Message("250 OK\r\n".to_string())
     }
 
     pub async fn handle_vrfy(&mut self, email: String, store: &Store) -> Response {
@@ -310,6 +310,6 @@ impl Session {
 
         self.state = SessionState::Command;
 
-        Response::Message(format!("250 Reset OK\r\n"))
+        Response::Message("250 Reset OK\r\n".to_string())
     }
 }

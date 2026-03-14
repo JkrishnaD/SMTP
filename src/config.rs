@@ -21,7 +21,7 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
 
 pub enum Connection {
     Tcp(TcpStream),
-    Tls(TlsStream<TcpStream>),
+    Tls(Box<TlsStream<TcpStream>>),
     None,
 }
 
