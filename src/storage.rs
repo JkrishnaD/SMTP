@@ -5,8 +5,11 @@ use diesel::{
     sqlite::SqliteConnection,
 };
 
-use crate::models::{Email, NewEmail, NewRecipient};
 use crate::schema::{emails, recipients};
+use crate::{
+    models::{Email, NewEmail, NewRecipient, User},
+    schema::users,
+};
 
 // struct for pooling database connections
 #[derive(Clone)]
@@ -73,6 +76,40 @@ impl Store {
         }
 
         Ok(())
+    }
+
+    pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, String> {
+        let pool = self.pool.clone();
+        let username = email.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+            users::table
+                .filter(users::email.eq(username))
+                .first::<User>(&mut conn)
+                .optional()
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    pub async fn verify_password(&self, email: &str, password: &str) -> Result<bool, String> {
+        let user = self.get_user_by_email(email).await?;
+
+        match user {
+            Some(user) => {
+                let stored_password = user.password_hash;
+
+                if stored_password.starts_with("$argon2") {
+                    Ok(false)
+                } else {
+                    Ok(stored_password == password)
+                }
+            }
+            None => Ok(false),
+        }
     }
 
     pub async fn get_mails_async(&self, user: String) -> Result<Vec<Email>, String> {

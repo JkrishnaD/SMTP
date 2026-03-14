@@ -100,6 +100,7 @@ async fn handle_client(
                 conn.write_all(msg.as_bytes()).await?;
                 break Ok(());
             }
+            Response::None => {}
         }
     }
 }

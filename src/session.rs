@@ -8,6 +8,8 @@ use crate::{
 pub struct Session {
     ehlo: Option<String>,
     helo: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
     tls_active: bool,
     authenticated: bool,
     mail_from: Option<String>,
@@ -20,6 +22,8 @@ pub struct Session {
 #[derive(Debug)]
 pub enum SessionState {
     Command,
+    AuthUsername,
+    AuthPassword,
     Data,
 }
 
@@ -32,6 +36,8 @@ impl Session {
             helo: None,
             tls_active: false,
             authenticated: false,
+            username: None,
+            password: None,
             mail_from: None,
             recipients: Vec::new(),
             state: SessionState::Command,
@@ -44,7 +50,7 @@ impl Session {
         match cmd {
             Command::Ehlo(domain) => self.handle_ehlo(domain),
             Command::StartTls => self.handle_start_tls(),
-            Command::Auth(email) => self.handle_auth(email),
+            Command::Auth(mechanism) => self.handle_auth(mechanism),
             Command::Helo(domain) => self.handle_helo(domain),
             Command::MailFrom(email) => self.handle_mail_from(email),
             Command::RcptTo(email) => self.handle_rcpt_to(email),
@@ -84,13 +90,19 @@ impl Session {
         self.tls_active = active;
     }
 
-    pub fn handle_auth(&mut self, email: String) -> Response {
+    pub fn handle_auth(&mut self, mechanism: String) -> Response {
         if !self.tls_active {
             return Response::Message("538 Encryption required for authentication\r\n".into());
         }
 
-        self.authenticated = true;
-        Response::Message(format!("235 mail {} Authentication successful\r\n", email))
+        if mechanism.to_ascii_uppercase() != "LOGIN" {
+            return Response::Message("504 Only Auth LOGIN is supported\r\n".to_string());
+        }
+
+        self.state = SessionState::AuthUsername;
+        self.username = None;
+        self.password = None;
+        Response::Message("334 VXNlcm5hbWU6:\r\n".into())
     }
 
     // Handles data input during the DATA state and returns a response
@@ -111,7 +123,7 @@ impl Session {
             }
         } else {
             self.buffer.push_str(line);
-            Response::Message(format!("354 End data with <CR><LF>.<CR><LF>\r\n"))
+            Response::None
         }
     }
 
@@ -150,7 +162,54 @@ impl Session {
                     Err(err) => Response::Message(format!("500 {}\r\n", err)),
                 }
             }
+            SessionState::AuthUsername => self.handle_auth_username(line, store).await,
+            SessionState::AuthPassword => self.handle_auth_password(line, store).await,
             SessionState::Data => self.handle_data(line, store).await,
+        }
+    }
+
+    pub async fn handle_auth_username(&mut self, line: &str, store: &Store) -> Response {
+        let email = line.trim().to_string();
+
+        match store.get_user_by_email(&email).await {
+            Ok(Some(user)) => {
+                self.username = Some(user.email);
+                self.state = SessionState::AuthPassword;
+                Response::Message("334 Password required\r\n".to_string())
+            }
+            Ok(None) => {
+                self.state = SessionState::Command;
+                Response::Message("535 Authentication credentials invalid\r\n".into())
+            }
+            Err(_) => {
+                self.state = SessionState::Command;
+                Response::Message("454 Temporary authentication failure\r\n".into())
+            }
+        }
+    }
+
+    pub async fn handle_auth_password(&mut self, line: &str, store: &Store) -> Response {
+        let email = match &self.username {
+            Some(e) => e.clone(),
+            None => return Response::Message("535 Authentication credentials invalid\r\n".into()),
+        };
+        let password = line.trim().to_string();
+
+        match store.verify_password(&email, &password).await {
+            Ok(true) => {
+                self.password = Some(password);
+                self.authenticated = true;
+                self.state = SessionState::Command;
+                Response::Message("235 Authentication successful\r\n".to_string())
+            }
+            Ok(false) => {
+                self.state = SessionState::Command;
+                Response::Message("535 Authentication credentials invalid\r\n".into())
+            }
+            Err(_) => {
+                self.state = SessionState::Command;
+                Response::Message("454 Temporary authentication failure\r\n".into())
+            }
         }
     }
 
@@ -168,12 +227,29 @@ impl Session {
         if self.ehlo.is_none() && self.helo.is_none() {
             return Response::Message("503 Send HELO/EHLO first\r\n".into());
         }
+
+        if self.tls_active == false {
+            return Response::Message("530 Tls handshake required\r\n".into());
+        }
+
+        if self.authenticated == false {
+            return Response::Message("530 Authentication required\r\n".into());
+        }
+
         self.mail_from = Some(email);
         Response::Message(format!("250 OK\r\n",))
     }
 
     // Handle the RCPT TO command
     pub fn handle_rcpt_to(&mut self, email: String) -> Response {
+        if self.tls_active == false {
+            return Response::Message("530 Tls handshake required\r\n".into());
+        }
+
+        if self.authenticated == false {
+            return Response::Message("530 Authentication required\r\n".into());
+        }
+
         if self.mail_from.is_none() {
             Response::Message(format!("503 Error: Need From mail\r\n"))
         } else {
