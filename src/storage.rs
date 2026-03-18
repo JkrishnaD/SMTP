@@ -5,7 +5,7 @@ use diesel::{
     sqlite::SqliteConnection,
 };
 
-use crate::schema::{emails, recipients};
+use crate::{models::NewUser, schema::{emails, recipients}};
 use crate::{
     models::{Email, NewEmail, NewRecipient, User},
     schema::users,
@@ -76,6 +76,35 @@ impl Store {
         }
 
         Ok(())
+    }
+
+    pub async fn create_user(&self, mail: String, password: String) -> Result<User, String> {
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || -> Result<User, String> {
+            use crate::schema::users::dsl::*;
+
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+            let new_user = NewUser {
+                email: mail.clone(),
+                password_hash: password,
+            };
+
+            diesel::insert_into(users)
+                .values(&new_user)
+                .execute(&mut conn)
+                .map_err(|e| e.to_string())?;
+
+            let inserted_user = users
+                .filter(email.eq(mail))
+                .first::<User>(&mut conn)
+                .map_err(|e| e.to_string())?;
+
+            Ok(inserted_user)
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, String> {
@@ -157,5 +186,22 @@ impl Store {
         .map_err(|e| e.to_string())??;
 
         Ok(exist)
+    }
+
+    pub async fn get_users(&self) -> Result<Vec<User>, String> {
+        let pool = self.pool.clone();
+
+        let existing_users = tokio::task::spawn_blocking(move || -> Result<Vec<User>, String> {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+            users::table
+                .select(User::as_select())
+                .load(&mut conn)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+
+        Ok(existing_users)
     }
 }

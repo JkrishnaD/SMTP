@@ -1,4 +1,5 @@
 use diesel::prelude::{Insertable, Queryable, Selectable};
+use serde::{Deserialize, Serialize};
 
 use crate::schema::{emails, recipients, users};
 
@@ -25,7 +26,7 @@ pub struct NewRecipient {
     pub recipient: String,
 }
 
-#[derive(Queryable, Selectable, Debug)]
+#[derive(Queryable, Selectable, Debug, Serialize)]
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
@@ -33,4 +34,11 @@ pub struct User {
     pub email: String,
     pub password_hash: String,
     created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Insertable, Deserialize)]
+#[diesel(table_name = users)]
+pub struct NewUser {
+    pub email: String,
+    pub password_hash: String,
 }
