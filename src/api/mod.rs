@@ -10,6 +10,14 @@ use crate::{
 
 mod routes;
 
+/// All the routes for the API
+/// GET /users - get all users
+/// POST /user - create a new user
+/// GET emails/:user - get all emails for a user
+/// GET emails/:id - get a specific email by id
+/// DELETE /email/:id - delete a specific email by id
+/// POST /send - send an email
+/// GET /health - get the health of the server
 pub fn create_router(store: Store) -> Router {
     Router::new()
         .route("/", get(handle_root))
