@@ -15,3 +15,6 @@ rustls-pemfile = "2.2.0"
 password-hash = { version = "0.6.0", features = ["rand_core"] }
 argon2 = "0.5.3"
 rand = { version = "0.10.0", features = ["std"] }
+axum = "0.8.8"
+serde_json = "1.0.149"
+serde = { version = "1.0.228", features = ["derive"] }

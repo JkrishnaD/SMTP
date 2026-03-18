@@ -5,12 +5,14 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
+    api::create_router,
     config::{CONFIG, Connection},
     response::Response,
     storage::Store,
     tls::load_tls_config,
 };
 
+mod api;
 mod config;
 mod error;
 mod models;
@@ -37,6 +39,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tls_config_load = load_tls_config()?;
     let tls_acceptor = TlsAcceptor::from(tls_config_load);
+
+    let app = create_router(store.clone());
+
+    tokio::spawn(async move {
+        let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    });
 
     loop {
         let store = store.clone();
