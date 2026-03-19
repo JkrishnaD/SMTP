@@ -1,4 +1,5 @@
 use axum::{Json, extract::State, http::StatusCode};
+use serde::Serialize;
 
 use crate::{
     models::{NewUser, User},
@@ -35,4 +36,21 @@ pub async fn handle_post_user(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(user))
+}
+
+#[derive(Serialize)]
+pub struct HealthResponse {
+    status: &'static str,
+    smtp: &'static str,
+    db: &'static str,
+}
+
+pub async fn handle_health() -> (StatusCode, Json<HealthResponse>) {
+    let response = HealthResponse {
+        status: "Ok",
+        smtp: "running",
+        db: "connected",
+    };
+
+    (StatusCode::OK, Json(response))
 }
