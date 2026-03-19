@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
@@ -60,13 +60,13 @@ pub async fn handle_health() -> (StatusCode, Json<HealthResponse>) {
 }
 
 #[derive(Deserialize)]
-pub struct Params {
+pub struct EmailGetParams {
     pub email: String,
 }
 
 pub async fn handle_email_by_user(
     State(store): State<Store>,
-    Path(params): Path<Params>,
+    Path(params): Path<EmailGetParams>,
 ) -> Result<Json<Vec<EmailResponse>>, (StatusCode, String)> {
     let email_details = store
         .get_emails_by_user(params.email)
@@ -74,4 +74,21 @@ pub async fn handle_email_by_user(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(email_details))
+}
+
+#[derive(Deserialize)]
+pub struct UserDeleteParams {
+    pub id: i32,
+}
+
+pub async fn handle_delete_user(
+    State(store): State<Store>,
+    Path(params): Path<UserDeleteParams>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    let user = store
+        .delete_user_by_id(params.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(user))
 }

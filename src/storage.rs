@@ -209,7 +209,6 @@ impl Store {
             .filter(recipients::recipient.eq(user))
             .select(Email::as_select())
             .load::<Email>(conn)?;
-
         Ok(results)
     }
 
@@ -248,5 +247,24 @@ impl Store {
         .map_err(|e| e.to_string())??;
 
         Ok(existing_users)
+    }
+
+    pub async fn delete_user_by_id(&self, email_id: i32) -> Result<usize, String> {
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || -> Result<usize, String> {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+            let user_id = diesel::delete(users::table.filter(users::id.eq(email_id)))
+                .execute(&mut conn)
+                .map_err(|e| e.to_string())?;
+
+            if user_id == 0 {
+                return Err("User not found".to_string());
+            }
+            Ok(user_id)
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 }

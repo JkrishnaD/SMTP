@@ -1,11 +1,12 @@
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
 use crate::{
     api::routes::{
-        handle_email_by_user, handle_get_users, handle_health, handle_post_user, handle_root,
+        handle_delete_user, handle_email_by_user, handle_get_users, handle_health,
+        handle_post_user, handle_root,
     },
     storage::Store,
 };
@@ -27,5 +28,6 @@ pub fn create_router(store: Store) -> Router {
         .route("/user", post(handle_post_user))
         .route("/health", get(handle_health))
         .route("/email/{email}", get(handle_email_by_user))
+        .route("/email/{email}", delete(handle_delete_user))
         .with_state(store)
 }
