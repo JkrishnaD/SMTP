@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use diesel::{
     dsl::exists,
     prelude::*,
@@ -5,10 +7,13 @@ use diesel::{
     sqlite::SqliteConnection,
 };
 
-use crate::{models::NewUser, schema::{emails, recipients}};
 use crate::{
-    models::{Email, NewEmail, NewRecipient, User},
+    models::{Email, NewEmail, NewRecipient, RecipientResponse, User},
     schema::users,
+};
+use crate::{
+    models::{EmailResponse, NewUser},
+    schema::{emails, recipients},
 };
 
 // struct for pooling database connections
@@ -49,7 +54,7 @@ impl Store {
         body_text: String,
     ) -> QueryResult<()> {
         let new_email = NewEmail {
-            sender: sender_addr
+            sender: sender_addr,
         };
 
         diesel::insert_into(emails::table)
@@ -67,7 +72,7 @@ impl Store {
                 email_id: last_id,
                 recipient: r,
                 subject: None,
-                body: body_text.clone()
+                body: body_text.clone(),
             };
 
             diesel::insert_into(recipients::table)
@@ -102,6 +107,46 @@ impl Store {
                 .map_err(|e| e.to_string())?;
 
             Ok(inserted_user)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    pub async fn get_emails_by_user(&self, user: String) -> Result<Vec<EmailResponse>, String> {
+        let pool = self.pool.clone();
+
+        tokio::task::spawn_blocking(move || -> Result<Vec<EmailResponse>, String> {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+
+            let rows = emails::table
+                .inner_join(recipients::table.on(recipients::email_id.eq(emails::id)))
+                .filter(recipients::recipient.eq(&user))
+                .select((
+                    emails::id,
+                    emails::sender,
+                    recipients::recipient,
+                    recipients::subject,
+                    recipients::body,
+                ))
+                .load::<(i32, String, String, Option<String>, String)>(&mut conn)
+                .map_err(|e| e.to_string())?;
+
+            let mut map = HashMap::new();
+
+            for (email_id, sender, recipient, subject, body) in rows {
+                let entry = map.entry(email_id).or_insert(EmailResponse {
+                    id: email_id,
+                    sender,
+                    recipients: Vec::new(),
+                });
+                entry.recipients.push(RecipientResponse {
+                    recipient,
+                    subject,
+                    body,
+                });
+            }
+
+            Ok(map.into_values().collect::<Vec<EmailResponse>>())
         })
         .await
         .map_err(|e| e.to_string())?

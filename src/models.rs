@@ -54,3 +54,17 @@ pub struct NewUser {
     pub email: String,
     pub password_hash: String,
 }
+
+#[derive(Serialize)]
+pub struct RecipientResponse {
+    pub recipient: String,
+    pub subject: Option<String>,
+    pub body: String,
+}
+
+#[derive(Serialize)]
+pub struct EmailResponse {
+    pub id: i32,
+    pub sender: String,
+    pub recipients: Vec<RecipientResponse>,
+}

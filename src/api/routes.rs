@@ -1,8 +1,12 @@
-use axum::{Json, extract::State, http::StatusCode};
-use serde::Serialize;
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    models::{NewUser, User},
+    models::{EmailResponse, NewUser, User},
     storage::Store,
 };
 
@@ -53,4 +57,21 @@ pub async fn handle_health() -> (StatusCode, Json<HealthResponse>) {
     };
 
     (StatusCode::OK, Json(response))
+}
+
+#[derive(Deserialize)]
+pub struct Params {
+    pub email: String,
+}
+
+pub async fn handle_email_by_user(
+    State(store): State<Store>,
+    Path(params): Path<Params>,
+) -> Result<Json<Vec<EmailResponse>>, (StatusCode, String)> {
+    let email_details = store
+        .get_emails_by_user(params.email)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(email_details))
 }
