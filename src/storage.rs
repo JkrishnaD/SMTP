@@ -49,9 +49,7 @@ impl Store {
         body_text: String,
     ) -> QueryResult<()> {
         let new_email = NewEmail {
-            sender: sender_addr,
-            subject: None,
-            body: body_text,
+            sender: sender_addr
         };
 
         diesel::insert_into(emails::table)
@@ -68,6 +66,8 @@ impl Store {
             let new_recipient = NewRecipient {
                 email_id: last_id,
                 recipient: r,
+                subject: None,
+                body: body_text.clone()
             };
 
             diesel::insert_into(recipients::table)

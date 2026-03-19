@@ -9,12 +9,22 @@ use crate::schema::{emails, recipients, users};
 pub struct Email {
     pub id: i32,
     pub sender: String,
+    pub created_at: chrono::NaiveDateTime,
 }
 
 #[derive(Insertable)]
 #[diesel(table_name = emails)]
 pub struct NewEmail {
     pub sender: String,
+}
+
+#[derive(Queryable, Selectable, Debug)]
+#[diesel(table_name = recipients)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct Recipient {
+    pub id: i32,
+    pub email_id: i32,
+    pub recipient: String,
     pub subject: Option<String>,
     pub body: String,
 }
@@ -24,6 +34,8 @@ pub struct NewEmail {
 pub struct NewRecipient {
     pub email_id: i32,
     pub recipient: String,
+    pub subject: Option<String>,
+    pub body: String,
 }
 
 #[derive(Queryable, Selectable, Debug, Serialize)]

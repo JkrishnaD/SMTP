@@ -4,8 +4,6 @@ diesel::table! {
     emails (id) {
         id -> Integer,
         sender -> Text,
-        subject -> Nullable<Text>,
-        body -> Text,
         created_at -> Timestamp,
     }
 }
@@ -15,6 +13,8 @@ diesel::table! {
         id -> Integer,
         email_id -> Integer,
         recipient -> Text,
+        subject -> Nullable<Text>,
+        body -> Text,
     }
 }
 
